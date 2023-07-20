@@ -11,6 +11,7 @@ import socket
 import sys
 import time
 import typing
+from urllib.parse import urlparse
 
 import requests
 # import scapy
@@ -101,6 +102,24 @@ class HelpParser(argparse.ArgumentParser):
 #######################################################
 # Functions ###########################################
 #######################################################
+def get_IPs_from_file(infile: str, column: str = None) -> list[str]:
+	ext = os.path.splitext(infile)[1]
+
+	if ext == ".txt":
+		with open(args.infile, "r") as f:
+			return list(map(lambda l: l.strip(), f.readlines()))
+	elif ext == ".csv":
+		if column is None:
+			print("Unable to process .csv without specifying the column to get URLs from.")
+			exit(1)
+
+		df = pd.read_csv(infile)
+		sites = df[column]
+		return list(sites.apply(lambda x: urlparse(x).netloc))
+	else:
+		print(f"Unable to process infile of filetype [{ext}]")
+
+
 def get_rpki_data(asn: str, ip_prefix: str):
 	res = requests.get(RIPE_RPKI.format(asn, ip_prefix))
 	# Who needs error handling?
@@ -295,10 +314,10 @@ def main(ip_list: list[str], outfolder: str = None) -> list[list]:
 
 		if outfolder:
 			df = pd.DataFrame(data=raw_data, columns=["hop", "ip", "prefix", "asn", "status"], dtype=str)
-			path = os.path.join(outfolder, "data")
-			if not os.path.exists(path):
-				os.mkdir(path)
-			df.to_csv(os.path.join(path, f"{target_ip}.csv"), index=False)
+			data_path = os.path.join(outfolder, "data")
+			if not os.path.exists(data_path):
+				os.mkdir(data_path)
+			df.to_csv(os.path.join(data_path, f"{target_ip}.csv"), index=False)
 
 			caption = "The results from a traceroute to " + target_ip
 			label = f"tab:table-{5}x{len(raw_data)}"
@@ -319,8 +338,12 @@ def main(ip_list: list[str], outfolder: str = None) -> list[list]:
 	\\caption{""" + caption + """}
 	\label{""" + label + """}
 \\end{table}"""
+			
+			table_path = os.path.join(outfolder, "latex_tables")
+			if not os.path.exists(table_path):
+				os.mkdir(table_path)
 
-			with open(os.path.join(outfolder, f"table_{target_ip}.tex"), "w") as f:
+			with open(os.path.join(table_path, f"{target_ip}.tex"), "w") as f:
 				f.write(tex)
 
 		#summary.append([target_ip, len(unique_prefixes), num_valid, num_invalid, num_notfound])
@@ -345,6 +368,7 @@ parser = HelpParser(
 
 parser.add_argument("outfolder", type=str, help="A folder to put output data in.")
 parser.add_argument("--infile", type=str, help="A path to a list of IPs.")
+parser.add_argument("--column", type=str, help="The column to get URLs from if a .csv is provided as an infile.")
 parser.add_argument("--ip", action="append", type=str, help="Used to specify an IP to process, with or without an infile.")
 #parser.add_argument("--as", action="store_true", help="Map an IP address to an AS")
 
@@ -375,8 +399,7 @@ if __name__ == "__main__":
 		IPs += args.ip
 
 	if args.infile:
-		with open(args.infile, "r") as f:
-			IPs += list(map(lambda l: l.strip(), f.readlines()))
+		IPs += get_IPs_from_file(args.infile, args.column)
 
 	if len(IPs) == 0:
 		print("No IPs specified.")
