@@ -1,0 +1,7 @@
+__pycache__
+lib
+.idea
+*.icloud
+Outputs/*
+*.env
+*.DS_Store
