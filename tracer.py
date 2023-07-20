@@ -4,19 +4,21 @@
 
 
 import argparse
+import logging
 import os
 import pandas as pd
+import multiprocessing as mp
 import re
 import socket
 import sys
 import time
+import traceback
 import typing
 from urllib.parse import urlparse
 
 import requests
-# import scapy
 
-# from scapy.layers.inet import traceroute
+import scapy.layers.inet as scapyinet
 
 #######################################################
 # Globals #############################################
@@ -78,6 +80,8 @@ NA      | 10.255.235.4     | NA                  |    | other    |            | 
 
 """
 
+PROCESS_START_TIME = time.time()
+
 #######################################################
 # Classes #############################################
 #######################################################
@@ -110,14 +114,15 @@ def get_IPs_from_file(infile: str, column: str = None) -> list[str]:
 			return list(map(lambda l: l.strip(), f.readlines()))
 	elif ext == ".csv":
 		if column is None:
-			print("Unable to process .csv without specifying the column to get URLs from.")
+			logger.error("Unable to process .csv without specifying the column to get URLs from.")
 			exit(1)
 
 		df = pd.read_csv(infile)
 		sites = df[column]
 		return list(sites.apply(lambda x: urlparse(x).netloc))
 	else:
-		print(f"Unable to process infile of filetype [{ext}]")
+		logger.error(f"Unable to process infile of filetype [{ext}]")
+		exit(1)
 
 
 def get_rpki_data(asn: str, ip_prefix: str):
@@ -183,7 +188,7 @@ def mapToASes(ips: list[str]) -> list[ASMapping]:
 
 	results = ""
 	while True:
-		msg = s.recv(25)
+		msg = s.recv(2^5)
 		if msg == b'':
 			break
 		results += str(msg, "ascii")
@@ -234,22 +239,70 @@ def parse_output(results: str) -> list[Hop]:
 def traceroute(addresses: list[str] | str) -> list[list[Hop]]:
 	# res, unanswered = traceroute(ipaddr, maxttl=32)
 
-	if type(addresses) == "str":
+	if type(addresses) == str:
 		addresses = [addresses]
-
 
 	results = []
 	for addr in addresses:
 		cmd = " ".join(WIN32_TRACE + [addr])
-		print(f"Performing traceroute for \"{addr}\" via [{cmd}]")
+		logger.info(f"Performing traceroute for \"{addr}\" via [{cmd}]")
 		trace = os.popen(cmd).read()
 		results.append(parse_output(trace))
 
 	return results
 
+def mp_traceroute(addresses: list[str] | str) -> list[list[Hop]]:
+	process_count = mp.cpu_count()
+
+	def sigint_handler(signal, frame):
+		logger.error("Received interrupt signal, exiting. " + "=" * 50)
+		pool.terminate()
+		exit(1)
+
+	def error_callback(e):
+		logger.error("callback error")
+		traceback.print_exception(type(e), e, e.__traceback__)
+		pool.terminate()
+		logger.error("Worker pool has consequently been terminated, exiting.")
+		# exit(1)
+
+	successful_run = False
+	with mp.Pool(processes=process_count) as pool:
+		# See comments in RPKI project for reasoning on why this is done like this
+		results = [pool.apply_async(traceroute, args=(addr,), error_callback=error_callback) for addr in addresses]
+		last_ready = 0
+		while True:
+			time.sleep(0.5)
+			try:
+				# These need to be done here to get the exception.
+				ready = [r.ready() for r in results]
+				last_ready = ready.count(True)
+				successful = [r.successful() for r in results]
+			except Exception as err:
+				if pool._state == "TERMINATE":
+					break
+				continue
+
+			if all(successful):
+				# Everything completed successfully.
+				successful_run = True
+				break
+			elif all(ready):
+				# Not everything completed successfully, but everything is ready now.
+				raise Exception("MP Traceroute failed")
+
+	if successful_run:
+		# Everything processed successfully.
+		logger.info("MP Traceroute finished")
+		return [r.get()[0] for r in results]
+	else:
+		logger.error("Error in pool processing")
+		exit(1)
+
+
 def main(ip_list: list[str], outfolder: str = None) -> list[list]:
-	traces = traceroute(ip_list)
-	print("Finished tracing IPs")
+	traces = mp_traceroute(ip_list)
+	logger.info("Finished tracing IPs")
 
 	if outfolder and not os.path.exists(outfolder):
 		os.mkdir(outfolder)
@@ -295,18 +348,18 @@ def main(ip_list: list[str], outfolder: str = None) -> list[list]:
 					if status == "valid":
 						num_valid += 1
 					elif status.find("invalid") != -1:
-						print("Invalid Type:", status)
+						logger.warning(f"Invalid Type: {status}")
 						num_invalid += 1
 					elif status == "unknown":
 						num_notfound += 1
 					else:
-						print(ip)
-						print(asn)
-						print(status)
-						print('=' * 50)
-						print(hop)
-						print(as_data)
-						print(rpki_data)
+						logger.debug(ip)
+						logger.debug(asn)
+						logger.debug(status)
+						logger.debug('=' * 50)
+						logger.debug(hop)
+						logger.debug(as_data)
+						logger.debug(rpki_data)
 						raise Exception("unknown status")
 
 			# df.concat({"hop": key, "ip": ip, "prefix": prefix, "asn": asn, "status": status})
@@ -357,9 +410,24 @@ def main(ip_list: list[str], outfolder: str = None) -> list[list]:
 
 	return all_raw_data
 
+
 #######################################################
 # Initialization ######################################
 #######################################################
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# Figured out how to do this by looking here: https://docs.python.org/3/library/logging.html#logging.basicConfig
+#logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.DEBUG)
+
+# So I googled "set format for individual loggers python" and it took me to here: https://docs.python.org/3/howto/logging-cookbook.html#using-logging-in-multiple-modules
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+# To get milliseconds included: https://stackoverflow.com/a/7517430
+formatter = logging.Formatter(fmt='%(asctime)s.%(msecs)03d %(message)s', datefmt='%m/%d/%Y %H:%M:%S')
+ch.setFormatter(formatter)
+logger.addHandler(ch)
+
 parser = HelpParser(
 	prog="tracer.py",
 	description="description",
@@ -380,19 +448,20 @@ if __name__ == "__main__":
 		pass
 	elif sys.platform == "darwin":
 		# OS X
-		print("Not supported for platform:", sys.platform)
+		logging.error(f"Not supported for platform: {sys.platform}")
 		exit(1)
 
 	elif sys.platform == "linux" or sys.platform == "linux":
 		# Linux
-		print("Not supported for platform:", sys.platform)
+		logging.error(f"Not supported for platform: {sys.platform}")
 		exit(1)
 
 	else:
-		print("Unknown platform:", sys.platform)
+		logging.error(f"Unknown platform: {sys.platform}")
 		exit(1)
 
 	vargs = vars(args)
+	logger.debug("Launched with arguments: %s", vargs)
 
 	IPs = []
 	if args.ip:
