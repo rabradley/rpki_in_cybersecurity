@@ -124,6 +124,33 @@ def get_IPs_from_file(infile: str, column: str = None) -> list[str]:
 		logger.error(f"Unable to process infile of filetype [{ext}]")
 		exit(1)
 
+def create_latex_table(columns: list, data: list[list], caption: str, label: str, hlines: bool = True) -> str:
+	c_str = "|" + "c|" * len(columns)
+	columns_str = " & ".join(columns)
+	data_str = []
+
+	hline_sep = (hlines and "\n\t\\hline\n\t") or "\n\t"
+
+	for x in data:
+		data_str.append(" & ".join(str(v) for v in x) + "\\\\")
+
+	data_str = hline_sep.join(data_str)
+
+	tex = """\\begin{table}[H]
+	\\centering
+	\\begin{tabular}{""" + c_str + """}
+	\\hline
+	""" + columns_str + """ \\\\
+	\\hline
+	""" + data_str + """
+	\\hline
+	\\end{tabular}
+	\\caption{""" + caption + """}
+	\\label{""" + label + """}
+\\end{table}"""
+
+	return tex
+
 
 def get_rpki_data(asn: str, ip_prefix: str):
 	res = requests.get(RIPE_RPKI.format(asn, ip_prefix))
@@ -252,7 +279,7 @@ def traceroute(addresses: list[str] | str) -> list[list[Hop]]:
 	return results
 
 def mp_traceroute(addresses: list[str] | str) -> list[list[Hop]]:
-	process_count = mp.cpu_count()
+	process_count = min(len(addresses), mp.cpu_count())
 
 	def sigint_handler(signal, frame):
 		logger.error("Received interrupt signal, exiting. " + "=" * 50)
@@ -331,7 +358,7 @@ def main(ip_list: list[str], outfolder: str = None) -> list[list]:
 			rpki_data = get_rpki_data(as_data["asn"], as_data["prefix"])
 
 			unique = True
-			if (as_data["prefix"] is None) or (as_data["prefix"] in unique_prefixes):
+			if (as_data["prefix"] is None or as_data["prefix"] == "NA") or (as_data["prefix"] in unique_prefixes):
 				unique = False
 			else:
 				unique_prefixes.append(as_data["prefix"])
@@ -363,7 +390,7 @@ def main(ip_list: list[str], outfolder: str = None) -> list[list]:
 						raise Exception("unknown status")
 
 			# df.concat({"hop": key, "ip": ip, "prefix": prefix, "asn": asn, "status": status})
-			raw_data.append([hop_number + 1, ip, prefix, asn, status])
+			raw_data.append([hop_number + 1, ip, prefix, asn, status.capitalize()])
 
 		if outfolder:
 			df = pd.DataFrame(data=raw_data, columns=["hop", "ip", "prefix", "asn", "status"], dtype=str)
@@ -374,23 +401,7 @@ def main(ip_list: list[str], outfolder: str = None) -> list[list]:
 
 			caption = "The results from a traceroute to " + target_ip
 			label = f"tab:table-{5}x{len(raw_data)}"
-			tex = """\\begin{table}[H]
-	\\centering
-	\\begin{tabular}{|c|c|c|c|c|}
-	\\hline
-	Hop & IP & Prefix & AS & RPKI Status \\\\"""
-
-			for x in raw_data:
-				tex += f"""
-	\\hline
-	{x[0]} & {x[1]} & {x[2]} & {x[3]} & {x[4].capitalize()} \\\\"""
-
-			tex += """
-	\\hline
-	\\end{tabular}
-	\\caption{""" + caption + """}
-	\label{""" + label + """}
-\\end{table}"""
+			tex = create_latex_table(["Hop", "IP", "Prefix", "AS", "RPKI Status"], raw_data, caption, label)
 			
 			table_path = os.path.join(outfolder, "latex_tables")
 			if not os.path.exists(table_path):
