@@ -4,6 +4,7 @@
 
 
 import argparse
+import datetime
 import logging
 import os
 import pandas as pd
@@ -343,9 +344,18 @@ def mp_traceroute(addresses: list[str] | str) -> list[TracerouteResult]:
 		exit(1)
 
 
-def main(ip_list: list[str], outfolder: str = None) -> list[list]:
-	traces = mp_traceroute(ip_list)
-	logger.info("Finished tracing IPs")
+def main(ip_list: list[str], outfolder: str = None, multiprocessing: bool = True) -> list[list]:
+	trace_start = time.time()
+	if multiprocessing:
+		logger.info("Using multiprocessing for traceroutes.")
+		traces = mp_traceroute(ip_list)
+	else:
+		logger.info("Multiprocessing disabled, using single process.")
+		traces = traceroute(ip_list)
+
+	trace_end = time.time()
+
+	logger.info(f"Finished tracing IPs, time elapsed: {datetime.timedelta(seconds=trace_end-trace_start)}")
 
 	if outfolder and outfolder.lower() == os.devnull:
 		logger.info("Outfolder is going to null device.")
@@ -473,6 +483,7 @@ parser.add_argument("outfolder", type=str, help="A folder to put output data in.
 parser.add_argument("--infile", type=str, help="A path to a list of IPs.")
 parser.add_argument("--column", type=str, help="The column to get URLs from if a .csv is provided as an infile.")
 parser.add_argument("--ip", action="append", type=str, help="Used to specify an IP to process, with or without an infile.")
+parser.add_argument("--nomultiprocessing", action="store_false", help="Forces the program to do the traceroutes individually instead of using multiple processes.")
 #parser.add_argument("--as", action="store_true", help="Map an IP address to an AS")
 
 if __name__ == "__main__":
@@ -509,6 +520,6 @@ if __name__ == "__main__":
 		print("No IPs specified.")
 		exit(0)
 
-	main(IPs, args.outfolder)
+	main(IPs, outfolder=args.outfolder, multiprocessing=args.nomultiprocessing)
 
 
