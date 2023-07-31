@@ -95,6 +95,10 @@ class Hop(typing.TypedDict):
 	timestr: str
 	ip: str
 
+class TracerouteResult(typing.TypedDict):
+	output: list[Hop]
+	completed: bool
+
 class HelpParser(argparse.ArgumentParser):
 	def error(self, message):
 		sys.stderr.write("Error: %s\n" % message)
@@ -124,26 +128,31 @@ def get_IPs_from_file(infile: str, column: str = None) -> list[str]:
 		logger.error(f"Unable to process infile of filetype [{ext}]")
 		exit(1)
 
-def create_latex_table(columns: list, data: list[list], caption: str, label: str, hlines: bool = True) -> str:
+def create_latex_table(columns: list, data: list, caption: str, label: str, hlines: bool = True) -> str:
 	c_str = "|" + "c|" * len(columns)
 	columns_str = " & ".join(columns)
 	data_str = []
 
-	hline_sep = (hlines and "\n\t\\hline\n\t") or "\n\t"
+	hline_sep = (hlines and "\n\t\t\\hline\n\t\t") or "\n\t\t"
 
-	for x in data:
-		data_str.append(" & ".join(str(v) for v in x) + "\\\\")
+	for row in data:
+		# Todo: Let columns be chosen if type is a dict
+		if type(row) == list:
+			data_str.append(" & ".join(str(v) for v in row) + "\\\\")
+		elif type(row) == str:
+			x = "\\multicolumn{" + str(len(columns)) + "}{|c|}{" + row + "}"
+			data_str.append(x + "\\\\")
 
 	data_str = hline_sep.join(data_str)
 
 	tex = """\\begin{table}[H]
 	\\centering
 	\\begin{tabular}{""" + c_str + """}
-	\\hline
-	""" + columns_str + """ \\\\
-	\\hline
-	""" + data_str + """
-	\\hline
+		\\hline
+		""" + columns_str + """ \\\\
+		\\hline
+		""" + data_str + """
+		\\hline
 	\\end{tabular}
 	\\caption{""" + caption + """}
 	\\label{""" + label + """}
@@ -263,7 +272,7 @@ def parse_output(results: str) -> list[Hop]:
 
 	return route_data
 
-def traceroute(addresses: list[str] | str) -> list[list[Hop]]:
+def traceroute(addresses: list[str] | str) -> list[TracerouteResult]:
 	# res, unanswered = traceroute(ipaddr, maxttl=32)
 
 	if type(addresses) == str:
@@ -274,11 +283,18 @@ def traceroute(addresses: list[str] | str) -> list[list[Hop]]:
 		cmd = " ".join(WIN32_TRACE + [addr])
 		logger.info(f"Performing traceroute for \"{addr}\" via [{cmd}]")
 		trace = os.popen(cmd).read()
-		results.append(parse_output(trace))
+
+		output = parse_output(trace)
+		completed = output[len(output)-1]["ip"] == addr
+		# print(output, completed)
+
+		r: TracerouteResult = {"output": output, "completed": completed}
+
+		results.append(r)
 
 	return results
 
-def mp_traceroute(addresses: list[str] | str) -> list[list[Hop]]:
+def mp_traceroute(addresses: list[str] | str) -> list[TracerouteResult]:
 	process_count = min(len(addresses), mp.cpu_count())
 
 	def sigint_handler(signal, frame):
@@ -331,16 +347,22 @@ def main(ip_list: list[str], outfolder: str = None) -> list[list]:
 	traces = mp_traceroute(ip_list)
 	logger.info("Finished tracing IPs")
 
+	if outfolder and outfolder.lower() == os.devnull:
+		logger.info("Outfolder is going to null device.")
+		outfolder = None
+
 	if outfolder and not os.path.exists(outfolder):
-		os.mkdir(outfolder)
+		os.makedirs(outfolder, exist_ok=True)
 
 	summary = None
 	if outfolder:
-		summary = pd.DataFrame(columns=["address", "num_unique", "num_valid", "num_invalid", "num_notfound"], dtype=str)
+		summary = pd.DataFrame(columns=["address", "num_unique_prefixes", "num_valid", "num_invalid", "num_notfound", "hops", "completed"], dtype=str)
 
 
 	all_raw_data = []
-	for index, hop_list in enumerate(traces):
+	for index, trace_data in enumerate(traces):
+		hop_list = trace_data["output"]
+
 		target_ip = ip_list[index]
 		hop_ips = list(map(lambda x: x["ip"], hop_list))
 		as_mappings = mapToASes(hop_ips)
@@ -399,8 +421,10 @@ def main(ip_list: list[str], outfolder: str = None) -> list[list]:
 				os.mkdir(data_path)
 			df.to_csv(os.path.join(data_path, f"{target_ip}.csv"), index=False)
 
-			caption = "The results from a traceroute to " + target_ip
+			# ({trace_data['completed'] and 'Successful' or 'Unsuccessful'})
+			caption = f"The results from a traceroute to {target_ip}."
 			label = f"tab:table-{5}x{len(raw_data)}"
+			raw_data.append("Traceroute was " + (trace_data["completed"] and "successful" or "unsuccessful"))
 			tex = create_latex_table(["Hop", "IP", "Prefix", "AS", "RPKI Status"], raw_data, caption, label)
 			
 			table_path = os.path.join(outfolder, "latex_tables")
@@ -410,9 +434,9 @@ def main(ip_list: list[str], outfolder: str = None) -> list[list]:
 			with open(os.path.join(table_path, f"{target_ip}.tex"), "w") as f:
 				f.write(tex)
 
-		#summary.append([target_ip, len(unique_prefixes), num_valid, num_invalid, num_notfound])
-		summary.loc[len(summary), summary.columns] = target_ip, len(unique_prefixes), num_valid, num_invalid, num_notfound
-		#summary.loc[len(summary), summary.columns] = None, None, None, None, None
+			# summary.append([target_ip, len(unique_prefixes), num_valid, num_invalid, num_notfound])
+			summary.loc[len(summary), summary.columns] = target_ip, len(unique_prefixes), num_valid, num_invalid, num_notfound, len(hop_list), trace_data["completed"]
+			# summary.loc[len(summary), summary.columns] = None, None, None, None, None
 
 		all_raw_data.append(raw_data)
 
