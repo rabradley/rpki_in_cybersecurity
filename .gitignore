@@ -5,3 +5,5 @@ lib
 Outputs/*
 *.env
 *.DS_Store
+*.csv
+*.txt
