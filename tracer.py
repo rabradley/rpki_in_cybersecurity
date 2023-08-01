@@ -29,6 +29,8 @@ RIPE_RPKI = "https://stat.ripe.net/data/rpki-validation/data.json?resource={}&pr
 WIN32_TRACE = ["tracert", "-d"]
 # WIN32_TRACE_PATTERN = r"\s+(\d+)\s+([<\d\w\s]+)\s+(\d+\.\d+\.\d+\.\d+)"  # /g # Doesn't account for timeouts
 WIN32_TRACE_PATTERN = r"^\s*(\d+)\s+([<\d\sms*]+)\s+([\w\d\s.]+)\s*$"  # /gm
+# WIN32_TRACE_DEST_IP = r"Tracing route to [\w\d.-]+ \[(\d+\.\d+\.\d+\.\d+)\]"
+WIN32_TRACE_DEST_IP = r"Tracing route to ([\w\d.-]+)[\s\w]*\[*([\d.]*)\]*"
 
 """
 Tracing route to 93.184.216.34 over a maximum of 30 hops
@@ -98,6 +100,7 @@ class Hop(typing.TypedDict):
 
 class TracerouteResult(typing.TypedDict):
 	output: list[Hop]
+	destination_ip: str
 	completed: bool
 
 class HelpParser(argparse.ArgumentParser):
@@ -256,14 +259,31 @@ def mapToASes(ips: list[str]) -> list[ASMapping]:
 
 	return data
 
-def parse_output(results: str) -> list[Hop]:
-	pattern = re.compile(WIN32_TRACE_PATTERN)
+def parse_output(results: str) -> (list[Hop], str):
+	hop_pattern = re.compile(WIN32_TRACE_PATTERN)
 
 	route_data = []
 
-	for line in results.splitlines():
+	lines = results.splitlines()
+
+	# print(lines[1])
+	"""
+	Tracing route to google.com [142.250.191.238]
+	Tracing route to 8.8.8.8 over a maximum of 30 hops
+	"""
+
+	destination_ip = re.match(WIN32_TRACE_DEST_IP, lines[1])
+	if destination_ip.group(2) == "":
+		destination_ip = destination_ip.group(1)
+	else:
+		destination_ip = destination_ip.group(2)
+
+	#print(lines[1])
+	#cprint(destination_ip)
+
+	for line in lines:
 		line = line.strip()
-		match = pattern.match(line)
+		match = hop_pattern.match(line)
 		if match:
 			hop, _time, ip = match.groups()
 
@@ -271,7 +291,7 @@ def parse_output(results: str) -> list[Hop]:
 			if _time.find("*") == -1:
 				route_data.append(h)
 
-	return route_data
+	return route_data, destination_ip
 
 def traceroute(addresses: list[str] | str) -> list[TracerouteResult]:
 	# res, unanswered = traceroute(ipaddr, maxttl=32)
@@ -285,11 +305,11 @@ def traceroute(addresses: list[str] | str) -> list[TracerouteResult]:
 		logger.info(f"Performing traceroute for \"{addr}\" via [{cmd}]")
 		trace = os.popen(cmd).read()
 
-		output = parse_output(trace)
-		completed = output[len(output)-1]["ip"] == addr
+		output, dest_ip = parse_output(trace)
+		completed = output[len(output)-1]["ip"] == dest_ip
 		# print(output, completed)
 
-		r: TracerouteResult = {"output": output, "completed": completed}
+		r: TracerouteResult = {"output": output, "destination_ip": dest_ip, "completed": completed}
 
 		results.append(r)
 
@@ -432,7 +452,8 @@ def main(ip_list: list[str], outfolder: str = None, multiprocessing: bool = True
 			df.to_csv(os.path.join(data_path, f"{target_ip}.csv"), index=False)
 
 			# ({trace_data['completed'] and 'Successful' or 'Unsuccessful'})
-			caption = f"The results from a traceroute to {target_ip}."
+			target_str = (target_ip == trace_data["destination_ip"] and target_ip) or f"{target_ip} ({trace_data['destination_ip']})"
+			caption = f"The results from a traceroute to {target_str}."
 			label = f"tab:table-{5}x{len(raw_data)}"
 			raw_data.append("Traceroute was " + (trace_data["completed"] and "successful" or "unsuccessful"))
 			tex = create_latex_table(["Hop", "IP", "Prefix", "AS", "RPKI Status"], raw_data, caption, label)
@@ -454,6 +475,10 @@ def main(ip_list: list[str], outfolder: str = None, multiprocessing: bool = True
 		summary.to_csv(os.path.join(outfolder, f"rpki_summary.csv"), index=False)
 
 	return all_raw_data
+
+
+# https://superuser.com/questions/355486/what-is-the-range-of-ports-that-is-usually-used-in-the-traceroute-command
+# https://github.com/robertdavidgraham/masscan
 
 
 #######################################################
