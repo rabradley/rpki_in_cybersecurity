@@ -386,7 +386,7 @@ def main(ip_list: list[str], outfolder: str = None, multiprocessing: bool = True
 
 	summary = None
 	if outfolder:
-		summary = pd.DataFrame(columns=["destination", "destination_ipg", "num_unique_prefixes", "num_valid", "num_invalid", "num_notfound", "hops", "completed"], dtype=str)
+		summary = pd.DataFrame(columns=["destination", "destination_ip", "num_unique_prefixes", "num_valid", "num_invalid", "num_notfound", "hops", "completed"], dtype=str)
 
 
 	all_raw_data = []
