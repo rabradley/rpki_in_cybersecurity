@@ -386,7 +386,7 @@ def main(ip_list: list[str], outfolder: str = None, multiprocessing: bool = True
 
 	summary = None
 	if outfolder:
-		summary = pd.DataFrame(columns=["address", "num_unique_prefixes", "num_valid", "num_invalid", "num_notfound", "hops", "completed"], dtype=str)
+		summary = pd.DataFrame(columns=["destination", "destination_ipg", "num_unique_prefixes", "num_valid", "num_invalid", "num_notfound", "hops", "completed"], dtype=str)
 
 
 	all_raw_data = []
@@ -466,7 +466,7 @@ def main(ip_list: list[str], outfolder: str = None, multiprocessing: bool = True
 				f.write(tex)
 
 			# summary.append([target_ip, len(unique_prefixes), num_valid, num_invalid, num_notfound])
-			summary.loc[len(summary), summary.columns] = target_ip, len(unique_prefixes), num_valid, num_invalid, num_notfound, len(hop_list), trace_data["completed"]
+			summary.loc[len(summary), summary.columns] = target_ip, trace_data['destination_ip'], len(unique_prefixes), num_valid, num_invalid, num_notfound, len(hop_list), trace_data["completed"]
 			# summary.loc[len(summary), summary.columns] = None, None, None, None, None
 
 		all_raw_data.append(raw_data)
