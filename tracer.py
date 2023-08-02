@@ -395,6 +395,7 @@ def main(ip_list: list[str], outfolder: str = None, multiprocessing: bool = True
 
 		target_ip = ip_list[index]
 		hop_ips = list(map(lambda x: x["ip"], hop_list))
+		logger.info(f"Mapping to ASes for {target_ip}")
 		as_mappings = mapToASes(hop_ips)
 
 		unique_prefixes = []
@@ -407,6 +408,7 @@ def main(ip_list: list[str], outfolder: str = None, multiprocessing: bool = True
 			# print(hop["ip"], hop_number, hop)
 			ip = hop["ip"]
 			as_data = as_mappings[hop_number]
+			#logger.debug(f"\tGetting RPKI Data for {as_data['asn']}, {as_data['prefix']}")
 			rpki_data = get_rpki_data(as_data["asn"], as_data["prefix"])
 
 			unique = True
@@ -454,7 +456,7 @@ def main(ip_list: list[str], outfolder: str = None, multiprocessing: bool = True
 			# ({trace_data['completed'] and 'Successful' or 'Unsuccessful'})
 			target_str = (target_ip == trace_data["destination_ip"] and target_ip) or f"{target_ip} ({trace_data['destination_ip']})"
 			caption = f"The results from a traceroute to {target_str}."
-			label = f"tab:table-{5}x{len(raw_data)}"
+			label = f"tab:table-{target_str}"
 			raw_data.append("Traceroute was " + (trace_data["completed"] and "successful" or "unsuccessful"))
 			tex = create_latex_table(["Hop", "IP", "Prefix", "AS", "RPKI Status"], raw_data, caption, label)
 			
@@ -508,7 +510,7 @@ parser.add_argument("outfolder", type=str, help="A folder to put output data in.
 parser.add_argument("--infile", type=str, help="A path to a list of IPs.")
 parser.add_argument("--column", type=str, help="The column to get URLs from if a .csv is provided as an infile.")
 parser.add_argument("--ip", action="append", type=str, help="Used to specify an IP to process, with or without an infile.")
-parser.add_argument("--nomultiprocessing", action="store_false", help="Forces the program to do the traceroutes individually instead of using multiple processes.")
+parser.add_argument("--nomultiprocessing", action="store_true", help="Forces the program to do the traceroutes individually instead of using multiple processes.")
 #parser.add_argument("--as", action="store_true", help="Map an IP address to an AS")
 
 if __name__ == "__main__":
@@ -545,6 +547,6 @@ if __name__ == "__main__":
 		print("No IPs specified.")
 		exit(0)
 
-	main(IPs, outfolder=args.outfolder, multiprocessing=args.nomultiprocessing)
+	main(IPs, outfolder=args.outfolder, multiprocessing=not args.nomultiprocessing)
 
 
