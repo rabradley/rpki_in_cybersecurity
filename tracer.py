@@ -10,6 +10,7 @@ import os
 import pandas as pd
 import multiprocessing as mp
 import re
+import signal
 import socket
 import sys
 import time
@@ -322,6 +323,8 @@ def mp_traceroute(addresses: list[str] | str) -> list[TracerouteResult]:
 		logger.error("Received interrupt signal, exiting. " + "=" * 50)
 		pool.terminate()
 		exit(1)
+
+	signal.signal(signal.SIGINT, sigint_handler)
 
 	def error_callback(e):
 		logger.error("callback error")
