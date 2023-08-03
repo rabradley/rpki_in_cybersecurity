@@ -7,3 +7,4 @@ Outputs/*
 *.DS_Store
 *.csv
 *.txt
+*.log

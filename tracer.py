@@ -5,6 +5,7 @@
 
 import argparse
 import datetime
+import json
 import logging
 import os
 import pandas as pd
@@ -68,7 +69,11 @@ over a maximum of 30 hops:
 """
 
 # AS | IP | BGP Prefix | CC | Registry | Allocated | Info | AS Name
-CYMRU_PATTERN = r"^([\w\d]+)\s*\|\s*([\d.]+)\s*\|\s*([\d\w./]+)\s*\|\s*(\w+)\s*\|\s*(\w+)\s*\|\s*([\w\d-]+)\s*\|\s*(.+)$"
+
+# This one doesn't match for IPs like 10.0.0.1, which makes sense.
+# CYMRU_PATTERN = r"^([\w\d]+)\s*\|\s*([\d.]+)\s*\|\s*([\d\w./]+)\s*\|\s*(\w+)\s*\|\s*(\w+)\s*\|\s*([\w\d-]+)\s*\|\s*(.+)$"
+# This one matches everything though.
+CYMRU_PATTERN = r"^([\w\d]+)\s*\|\s*([\d.]+)\s*\|\s*([\d\w./]+)\s*\|\s*(\w*)\s*\|\s*(\w+)\s*\|\s*([\w\d-]*)\s*\|\s*(.+)$"
 
 # This pattern will not match the NA lines because the country doesn't have anything populated and thus breaks the pattern.
 """
@@ -205,12 +210,12 @@ def get_rpki_data(asn: str, ip_prefix: str):
 
 	return res["data"]
 
-def mapToASes(ips: list[str]) -> list[ASMapping]:
+def mapToASes(ips: list[str]) -> dict[str, ASMapping]:
 	"""
 	Maps a list of IPs to their autonomous systems.
 
 	:param ips:
-	:return: aha
+	:return:
 	"""
 	# https://docs.python.org/3/library/socket.html
 	# https://docs.python.org/3/howto/sockets.html
@@ -222,41 +227,56 @@ def mapToASes(ips: list[str]) -> list[ASMapping]:
 	s.send(b"begin\n")
 	s.send(b"verbose\n")
 
-	for ip in ips:
+	results = str(s.recv(256), "ascii")
+	for idx, ip in enumerate(ips):
 		s.send(bytes(ip + "\n", "ascii"))
+		res = s.recv(256)
+		results += str(res, "ascii")
 
 	s.send(b"end\n")
+	s.close()
 
+	"""
 	results = ""
 	while True:
 		msg = s.recv(2^5)
 		if msg == b'':
 			break
 		results += str(msg, "ascii")
+	"""
+
+	#with open("afgh.txt", "w") as f:
+		#f.write("\n".join(ips))
+
+	#with open("asd.txt", "w") as f:
+		#f.write(results)
 
 	lines = results.splitlines()
 	lines.pop(0)
-	data = []
+	data = {}
 
 	pattern = re.compile(CYMRU_PATTERN)
 
-	for key, ip in enumerate(ips):
-		line = lines[key]
+	for line in lines:
 		match = pattern.match(line)
+
+		# Two notable differences between a private and something without an AS: CC and Allocated
+		# NA      | 10.10.9.29       | NA                  |    | other    |            | NA
+		# NA      | 198.28.137.80    | NA                  | US | arin     | 2019-07-01 | NA
 
 		if match:
 			AS, IP, BGP_Prefix, CC, Registry, Allocated, AS_Name = match.groups()
-			data.append({
+
+			data[IP] = {
 				"asn": AS,
 				"ip": IP,
 				"prefix": BGP_Prefix
-			})
+			}
 		else:
-			data.append({
-				"asn": None,
-				"ip": ip,
-				"prefix": None
-			})
+			raise Exception('oh no!')
+
+	#with open("data.json", "w") as f:
+		#json.dump(data, f, indent="\t")
 
 	return data
 
@@ -267,7 +287,6 @@ def parse_output(results: str) -> (list[Hop], str):
 
 	lines = results.splitlines()
 
-	# print(lines[1])
 	"""
 	Tracing route to google.com [142.250.191.238]
 	Tracing route to 8.8.8.8 over a maximum of 30 hops
@@ -279,8 +298,8 @@ def parse_output(results: str) -> (list[Hop], str):
 	else:
 		destination_ip = destination_ip.group(2)
 
-	#print(lines[1])
-	#cprint(destination_ip)
+	#logger.info(lines[1])
+	#logger.info(destination_ip)
 
 	for line in lines:
 		line = line.strip()
@@ -308,7 +327,6 @@ def traceroute(addresses: list[str] | str) -> list[TracerouteResult]:
 
 		output, dest_ip = parse_output(trace)
 		completed = output[len(output)-1]["ip"] == dest_ip
-		# print(output, completed)
 
 		r: TracerouteResult = {"output": output, "destination_ip": dest_ip, "completed": completed}
 
@@ -391,15 +409,25 @@ def main(ip_list: list[str], outfolder: str = None, multiprocessing: bool = True
 	if outfolder:
 		summary = pd.DataFrame(columns=["destination", "destination_ip", "num_unique_prefixes", "num_valid", "num_invalid", "num_notfound", "hops", "completed"], dtype=str)
 
+	# Collect every hop IP we've worked with for a bulk query
+	logger.debug("Combining hop list")
+	all_hop_ips = []
+	for index, trace_data in enumerate(traces):
+		hop_list = trace_data["output"]
+		all_hop_ips += list(map(lambda x: x["ip"], hop_list))
 
+	# Remove duplicates
+	all_hop_ips = list(set(all_hop_ips))
+
+	logger.info(f"Mapping hops ({len(all_hop_ips)}) to ASes")
+	# Perform bulk query
+	all_as_mappings = mapToASes(all_hop_ips)
+
+	logger.info("Beginning calculations")
 	all_raw_data = []
 	for index, trace_data in enumerate(traces):
 		hop_list = trace_data["output"]
-
 		target_ip = ip_list[index]
-		hop_ips = list(map(lambda x: x["ip"], hop_list))
-		logger.info(f"Mapping to ASes for {target_ip}")
-		as_mappings = mapToASes(hop_ips)
 
 		unique_prefixes = []
 		num_valid = 0
@@ -408,10 +436,10 @@ def main(ip_list: list[str], outfolder: str = None, multiprocessing: bool = True
 
 		raw_data = []
 		for hop_number, hop in enumerate(hop_list):
-			# print(hop["ip"], hop_number, hop)
+			# logger.debug(hop["ip"], hop_number, hop)
 			ip = hop["ip"]
-			as_data = as_mappings[hop_number]
-			#logger.debug(f"\tGetting RPKI Data for {as_data['asn']}, {as_data['prefix']}")
+			as_data = all_as_mappings[ip]
+			# logger.debug(f"\tGetting RPKI Data for {as_data['asn']}, {as_data['prefix']}")
 			rpki_data = get_rpki_data(as_data["asn"], as_data["prefix"])
 
 			unique = True
@@ -479,6 +507,7 @@ def main(ip_list: list[str], outfolder: str = None, multiprocessing: bool = True
 	if outfolder:
 		summary.to_csv(os.path.join(outfolder, f"rpki_summary.csv"), index=False)
 
+	logger.info(f"Finished tracing and validating list of {len(ip_list)} ip(s).")
 	return all_raw_data
 
 
@@ -496,12 +525,20 @@ logger.setLevel(logging.DEBUG)
 #logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.DEBUG)
 
 # So I googled "set format for individual loggers python" and it took me to here: https://docs.python.org/3/howto/logging-cookbook.html#using-logging-in-multiple-modules
-ch = logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
+
 # To get milliseconds included: https://stackoverflow.com/a/7517430
 formatter = logging.Formatter(fmt='%(asctime)s.%(msecs)03d %(message)s', datefmt='%m/%d/%Y %H:%M:%S')
-ch.setFormatter(formatter)
-logger.addHandler(ch)
+
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.DEBUG)
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
+
+# https://stackoverflow.com/questions/13733552/logger-configuration-to-log-to-file-and-print-to-stdout
+file_handler = logging.FileHandler(os.path.splitext(os.path.split(__file__)[1])[0] + ".log", mode='w')
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
 
 parser = HelpParser(
 	prog="tracer.py",
@@ -547,7 +584,7 @@ if __name__ == "__main__":
 		IPs += get_IPs_from_file(args.infile, args.column)
 
 	if len(IPs) == 0:
-		print("No IPs specified.")
+		logger.error("No IPs specified.")
 		exit(0)
 
 	main(IPs, outfolder=args.outfolder, multiprocessing=not args.nomultiprocessing)

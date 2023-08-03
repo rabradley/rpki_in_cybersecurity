@@ -35,7 +35,7 @@ logger.addHandler(console_handler)
 
 
 # https://stackoverflow.com/questions/13733552/logger-configuration-to-log-to-file-and-print-to-stdout
-file_handler = logging.FileHandler(os.path.split(__file__)[1] + ".log")
+file_handler = logging.FileHandler(os.path.splitext(os.path.split(__file__)[1])[0] + ".log", mode='w')
 file_handler.setLevel(logging.DEBUG)
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
@@ -81,7 +81,7 @@ def ping_ip(ip):
 	return len(matches) > 0
 
 
-def get_ips_by_state(state, prefixes):
+def get_ips_by_state(state, how_many, prefixes):
 	state_ips = []
 
 	logger.info(f"get_ips_by_state({state})")
@@ -93,7 +93,7 @@ def get_ips_by_state(state, prefixes):
 
 	logger.info(f"begin {state} ({len(all_hosts)})")
 
-	while len(state_ips) < 100:
+	while len(state_ips) < how_many:
 		idx = random.randint(0, len(all_hosts) - 1)
 		ip = all_hosts.pop(idx)
 
@@ -108,26 +108,26 @@ def get_ips_by_state(state, prefixes):
 
 def worker_main(stuff):
 	#logger.info(os.getpid(), "working")
-	state, prefixes = stuff
+	state, how_many, prefixes = stuff
 
 	save_path = f"./valid_ips/{state}.json"
 	with open(save_path, "w") as f:
 		f.write("in progress")
 
-	ips = get_ips_by_state(state, prefixes)
+	ips = get_ips_by_state(state, how_many, prefixes)
 
 	with open(save_path, "w") as f:
 		json.dump(ips, f)
 
 	return state, ips
 
-def coolstuff():
+def mp_get_random_ips(how_many):
 	os.makedirs(f"./valid_ips", exist_ok=True)
 	state_prefixes = get_prefixes_by_state()
 
 	logger.info("done collecting")
 
-	tasks = [[state, data] for state, data in state_prefixes.items() if state != "-" and state != "District of Columbia"]
+	tasks = [[state, how_many, data] for state, data in state_prefixes.items() if state != "-" and state != "District of Columbia"]
 
 	logger.info("done queueing")
 
@@ -179,7 +179,8 @@ def coolstuff():
 		exit(1)
 
 def main():
-	res = coolstuff()
+	how_many = 100
+	res = mp_get_random_ips(how_many)
 
 	with open("./state_ips.json", "w") as f:
 		json.dump(res, f)
@@ -187,3 +188,4 @@ def main():
 
 if __name__ == "__main__":
 	main()
+
