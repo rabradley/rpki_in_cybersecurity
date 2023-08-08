@@ -3,15 +3,18 @@ import tracer
 import json
 import math
 import os
+import shutil
+import requests
 
-PC_COUNT = 4
+PC_COUNT = 17
 PC_INDEX = 0
 
 """
 
 """
 
-
+with open("./upload.txt") as f:
+	upload_url = f.read()
 
 if __name__ == "__main__":
 	with open("./state_ips.json") as f:
@@ -32,14 +35,22 @@ if __name__ == "__main__":
 
 	MY_GROUP = GROUPS[PC_INDEX]
 
+
+
 	for idx, entry in enumerate(state_ips):
 		if idx not in MY_GROUP:
 			continue
 
 		state, ips = entry
-		if os.path.exists(f"./Outputs/USTraceroute/{state}"):
+		if os.path.exists(f"C:/Users/Public/RPKI/{state}"):
 			print(f"State info for {state} already exists, skipping.")
 			continue
 
 		print("TRACE_STATE_IPS:", state, len(ips))
-		tracer.main(ip_list=ips, outfolder=f"./Outputs/USTraceroute/{state}")
+		tracer.main(ip_list=ips, outfolder=f"C:/Users/Public/RPKI/{state}")
+
+	shutil.make_archive(f"C:/Users/Public/RPKI_{PC_INDEX}", "zip", "C:/Users/Public/RPKI")
+	r = requests.post(upload_url, files={
+		"upload_file": open(f"C:/Users/Public/RPKI_{PC_INDEX}", "rb")
+	})
+
