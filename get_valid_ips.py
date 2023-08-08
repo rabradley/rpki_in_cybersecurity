@@ -148,7 +148,7 @@ def mp_get_random_ips(how_many):
 
 	logger.info("pool startup")
 
-	with mp.Pool(processes=2) as pool:
+	with mp.Pool(processes=12) as pool:
 		# See comments in RPKI project for reasoning on why this is done like this
 		results = pool.map_async(worker_main, iterable=tasks, error_callback=error_callback)
 		while True:

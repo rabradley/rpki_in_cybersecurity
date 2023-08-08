@@ -8,5 +8,8 @@ if __name__ == "__main__":
 
 	for entry in state_ips:
 		state, ips = entry
+		if os.path.exists(f"./Outputs/USTraceroute/{state}"):
+			continue
+
 		print("TRACE_STATE_IPS:", state, len(ips))
 		tracer.main(ip_list=ips, outfolder=f"./Outputs/USTraceroute/{state}")
