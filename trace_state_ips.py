@@ -43,15 +43,15 @@ if __name__ == "__main__":
 
 		state, ips = entry
 		if os.path.exists(f"C:/Users/Public/RPKI/{state}"):
-			#print(f"State info for {state} already exists, skipping.")
-			#continue
-			pass
+			print(f"State info for {state} already exists, skipping.")
+			continue
+			#pass
 
 		print("TRACE_STATE_IPS:", state, len(ips))
 		tracer.main(ip_list=ips, outfolder=f"C:/Users/Public/RPKI/{state}")
 
 	shutil.make_archive(f"C:/Users/Public/RPKI_{PC_INDEX}", "zip", "C:/Users/Public/RPKI")
 	r = requests.post(upload_url, files={
-		"upload_file": open(f"C:/Users/Public/RPKI_{PC_INDEX}", "rb")
+		"upload_file": open(f"C:/Users/Public/RPKI_{PC_INDEX}.zip", "rb")
 	})
 
