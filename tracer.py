@@ -21,7 +21,7 @@ from urllib.parse import urlparse
 
 import requests
 
-import scapy.layers.inet as scapyinet
+# import scapy.layers.inet as scapyinet
 
 #######################################################
 # Globals #############################################
