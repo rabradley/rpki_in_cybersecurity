@@ -34,7 +34,7 @@ if __name__ == "__main__":
 	last += [x for x in range(last[len(last) - 1] + 1, last[len(last) - 1] + remainder + 1)]
 
 	MY_GROUP = GROUPS[PC_INDEX]
-	print(MY_GROUP)
+	print(PC_INDEX, "|", MY_GROUP)
 
 
 	for idx, entry in enumerate(state_ips):
