@@ -6,7 +6,7 @@ import os
 import shutil
 import requests
 
-PC_COUNT = 17
+PC_COUNT = 16
 PC_INDEX = 0
 
 """
