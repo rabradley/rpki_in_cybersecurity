@@ -6,8 +6,10 @@ import os
 import shutil
 import requests
 
-PC_COUNT = 16
+PC_COUNT = 1 # 16
 PC_INDEX = 0
+
+ROOT_DIR = "C:/Users/Public/RPKI"
 
 """
 
@@ -42,16 +44,19 @@ if __name__ == "__main__":
 			continue
 
 		state, ips = entry
-		if os.path.exists(f"C:/Users/Public/RPKI/{state}"):
+		if os.path.exists(os.path.join(ROOT_DIR, state)):
 			print(f"State info for {state} already exists, skipping.")
 			continue
 			#pass
 
 		print("TRACE_STATE_IPS:", state, len(ips))
-		tracer.main(ip_list=ips, outfolder=f"C:/Users/Public/RPKI/{state}")
+		tracer.main(ip_list=ips, outfolder=os.path.join(ROOT_DIR, state))
 
-	shutil.make_archive(f"C:/Users/Public/RPKI_{PC_INDEX}", "zip", "C:/Users/Public/RPKI")
+	split = os.path.split(ROOT_DIR)
+	archive_path = os.path.join(split[0], f"{split[1]}_{PC_INDEX}")
+
+	shutil.make_archive(archive_path, "zip", ROOT_DIR)
 	r = requests.post(upload_url, files={
-		"upload_file": open(f"C:/Users/Public/RPKI_{PC_INDEX}.zip", "rb")
+		"upload_file": open(archive_path + ".zip", "rb")
 	})
 
