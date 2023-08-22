@@ -14,7 +14,9 @@ import pandas as pd
 import multiprocessing as mp
 from multiprocessing.pool import ThreadPool
 import time
+import typing
 
+import PyQt5
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5 import QtWidgets
@@ -56,6 +58,10 @@ def sanitizeComboBoxValue(text):
 		return None
 	return text
 
+
+def run(ips, outfolder):
+	tracer.main(ips, outfolder)
+
 #######################################################
 # GUI Classes #########################################
 #######################################################
@@ -93,19 +99,19 @@ class CSVImportWindow(QMainWindow):
 
 		# Create buttons
 		self.button_layout = QHBoxLayout()
-		self.button_layout.setSpacing(50)
+		self.button_layout.setSpacing(500)
 
 		# Manually
 		self.import_button = QPushButton("Import", self)
 		self.import_button.setFont(QFont('Arial:Bold', 20))
-		self.import_button.setStyleSheet("background-color : rgb(188,36,36); color: white")
+		self.import_button.setStyleSheet("background-color: rgb(188,36,36); color: white")
 		self.import_button.clicked.connect(self.accept)
 		self.button_layout.addWidget(self.import_button)
 
 		# Import file
 		self.cancel_button = QPushButton("Cancel", self)
 		self.cancel_button.setFont(QFont('Arial:Bold', 20))
-		self.cancel_button.setStyleSheet("background-color : rgb(188,36,36); color: white")
+		self.cancel_button.setStyleSheet("background-color: rgb(188,36,36); color: white")
 		self.cancel_button.clicked.connect(self.close)
 		self.button_layout.addWidget(self.cancel_button)
 
@@ -191,14 +197,14 @@ class InputWindow(QMainWindow):
 		# Manually
 		self.manual_button = QPushButton("Manual", self)
 		self.manual_button.setFont(QFont('Arial:Bold', 20))
-		self.manual_button.setStyleSheet("background-color : rgb(188,36,36); color: white")
+		self.manual_button.setStyleSheet("background-color: rgb(188,36,36); color: white")
 		self.button_layout.addWidget(self.manual_button)
 
 
 		# Import file
 		self.file_button = QPushButton("Select File", self)
 		self.file_button.setFont(QFont('Arial:Bold', 20))
-		self.file_button.setStyleSheet("background-color : rgb(188,36,36); color: white")
+		self.file_button.setStyleSheet("background-color: rgb(188,36,36); color: white")
 		self.file_button.clicked.connect(self.promptForFile)
 		self.button_layout.addWidget(self.file_button)
 
@@ -230,17 +236,17 @@ class InputWindow(QMainWindow):
 		self.cancel_button = QPushButton("Cancel", self)
 		#self.cancel_button.setGeometry(addQRects(self.cc_label.geometry(), geo(MARGIN, HEIGHT/2, -MARGIN*2, MARGIN*2)))
 		self.cancel_button.setFont(QFont('Arial:Bold', 20))
-		self.cancel_button.setStyleSheet("background-color : rgb(188,36,36); color : white")
+		self.cancel_button.setStyleSheet("background-color: rgb(188,36,36); color: white")
 
 		self.clear_button = QPushButton("Clear Inputs", self)
 		#self.clear_button.setGeometry(addQRects(self.state_label.geometry(), geo(MARGIN, HEIGHT / 2, -MARGIN*2, MARGIN * 2)))
 		self.clear_button.setFont(QFont('Arial:Bold', 20))
-		self.clear_button.setStyleSheet("background-color : rgb(188,36,36); color : white")
+		self.clear_button.setStyleSheet("background-color: rgb(188,36,36); color: white")
 
 		self.run_button = QPushButton("Run", self)
 		#self.run_button.setGeometry(addQRects(self.city_label.geometry(), geo(MARGIN, HEIGHT / 2, -MARGIN*2, MARGIN * 2)))
 		self.run_button.setFont(QFont('Arial:Bold', 20))
-		self.run_button.setStyleSheet("background-color : rgb(188,36,36); color : white")
+		self.run_button.setStyleSheet("background-color: rgb(188,36,36); color: white")
 
 		# Do setup stuff
 
@@ -310,6 +316,36 @@ class TableModel(QtCore.QAbstractTableModel):
 
 			if orientation == Qt.Vertical:
 				return str(self._data.index[section])
+
+class MyDialog(QDialog):
+	def __init__(self, parent, buttons):
+		super().__init__(parent)
+		self.layout = QVBoxLayout()
+		self.setWindowTitle("Traceroute program")
+
+		# https://doc.qt.io/qtforpython-5/PySide2/QtWidgets/QDialogButtonBox.html#PySide2.QtWidgets.PySide2.QtWidgets.QDialogButtonBox.StandardButton
+
+		self.message_label = QLabel("<msg>")
+		self.layout.addWidget(self.message_label)
+
+		self.button_box = QDialogButtonBox(buttons)
+		# self.button_box.accepted.connect(self.close)
+
+		dialogClick: typing.Callable[[QPushButton], None] = lambda btn: self.onClick(btn.text())
+
+		self.button_box.clicked.connect(dialogClick)
+		self.layout.addWidget(self.button_box)
+
+		self.setLayout(self.layout)
+
+	def onClick(self, button_text: str):
+		logger.debug(f"Vanilla onClick {button_text}")
+		self.close()
+
+	def setMessage(self, msg: str):
+		self.message_label.setText(msg)
+
+
 class Window(QMainWindow):
 	def __init__(self):
 		global CURRENT_RESOLUTION
@@ -333,16 +369,11 @@ class Window(QMainWindow):
 
 		self.showFullScreen()
 
-	def AddPushButton(self, text):
-		btn = QPushButton(text, self)
-		self.buttons.append(btn)
-		return btn
-
 	def UIComponents(self):
 		"""
 		#bannerg
 		red_bar = QLabel("You cant see me", self)
-		red_bar.setStyleSheet("background-color : rgb(163,4,4); color: rgb(163,4,4)")
+		red_bar.setStyleSheet("background-color: rgb(163,4,4); color: rgb(163,4,4)")
 		red_bar.setGeometry(25, 25, 725, 275)
 		"""
 		# BU logo
@@ -363,46 +394,53 @@ class Window(QMainWindow):
 		# self.stats.setGeometry(geo(195, 630, 400, 75))
 		self.stats_button.resize(BUTTON_SIZE)
 		# self.stats.setIcon(QtGui.QIcon("assets/exGraph.png"))
-		self.stats_button.setStyleSheet("background-color :rgb(188,36,36); color : white")
+		self.stats_button.setStyleSheet("background-color:rgb(188,36,36); color: white")
 		self.stats_button.setFont(QFont('Arial:Bold', 24))
 		self.stats_button.setIconSize(sQSize(500, 500))
 		self.stats_button.clicked.connect(self.statsPress)
 		"""
 
-		self.add_input_button = self.AddPushButton("Add Inputs")
-		self.add_input_button.resize(BUTTON_SIZE)
+		self.menu_button_container = QWidget(self)
+		
+		self.button_layout = QVBoxLayout()
+
+		self.add_input_button = QPushButton("Add Inputs")
+		self.add_input_button.setMinimumSize(BUTTON_SIZE)
 		#self.add_input_button.setIcon(QtGui.QIcon("assets/readme.png"))
-		#self.add_input_button.setStyleSheet("background-color :rgb(188,36,36); color : white")
+		#self.add_input_button.setStyleSheet("background-color:rgb(188,36,36); color: white")
 		self.add_input_button.setFont(QFont('Arial:Bold', 24))
 		self.add_input_button.setIconSize(sQSize(500, 500))
 		self.add_input_button.clicked.connect(self.addInputPressed)
+		self.button_layout.addWidget(self.add_input_button)
 
-		self.close_windows_button = self.AddPushButton("Close All Windows")
-		self.close_windows_button.resize(BUTTON_SIZE)
-		self.close_windows_button.setStyleSheet("background-color : rgb(188,36,36); color : white")
+		self.run_button = QPushButton("Run", self)
+		self.run_button.setMinimumSize(BUTTON_SIZE)
+		# self.run_button.setIcon(QtGui.QIcon("assets/readme.png"))
+		# self.run_button.setStyleSheet("background-color:rgb(188,36,36); color: white")
+		self.run_button.setFont(QFont('Arial:Bold', 24))
+		self.run_button.setIconSize(sQSize(500, 500))
+		self.run_button.clicked.connect(self.runPressed)
+		self.button_layout.addWidget(self.run_button)
+
+		self.close_windows_button = QPushButton("Close All Windows", self)
+		self.close_windows_button.setMinimumSize(BUTTON_SIZE)
+		self.close_windows_button.setStyleSheet("background-color: rgb(188,36,36); color: white")
 		self.close_windows_button.setFont(QFont('Arial:Bold', 24))
 		self.close_windows_button.clicked.connect(self.closePress)
+		self.button_layout.addWidget(self.close_windows_button)
 
-		self.exit_button = self.AddPushButton("Exit")
-		self.exit_button.resize(BUTTON_SIZE)
-		self.exit_button.setStyleSheet("background-color : rgb(188,36,36); color : white")
+		self.exit_button = QPushButton("Exit", self)
+		self.exit_button.setMinimumSize(BUTTON_SIZE)
+		self.exit_button.setStyleSheet("background-color: rgb(188,36,36); color: white")
 		self.exit_button.setFont(QFont('Arial:Bold', 24))
 		self.exit_button.clicked.connect(self.exitPress)
+		self.button_layout.addWidget(self.exit_button)
 
 
-		start_pos = (195, 500)
-
-		for i, v in enumerate(self.buttons):
-			x = sx(start_pos[0])
-			y = sy(start_pos[1] + (i-1) * 75) + sy((i-1) * 20)
-
-			"""
-			if i > 0:
-				geometry = buttons[i-1].geometry()
-				y += geometry.height() + 20
-			"""
-
-			v.move(x, y)
+		# I don't know if changing to this layout was worth the frustration here compared to the position math I had before.
+		self.menu_button_container.setStyleSheet("background-color: #cccccc;")
+		self.menu_button_container.setGeometry(geo(195, 500, 400, (75 + 20) * 4))  # Using the raw 400 and 75 to avoid double scaling
+		self.menu_button_container.setLayout(self.button_layout)
 
 		self.ips_df = pd.DataFrame(columns=["targets"])
 
@@ -424,6 +462,33 @@ class Window(QMainWindow):
 	def addInputPressed(self):
 		self.input_window = InputWindow(self)
 		self.input_window.show()
+
+	def runPressed(self):
+		if len(self.ips_df.index) == 0:
+			dialog = MyDialog(self, QDialogButtonBox.Ok)
+			dialog.setMessage("You need to have some targets to traceroute.")
+			dialog.exec()
+			return
+
+		output_directory = QFileDialog.getExistingDirectory(self, "Select Output Directory")
+		if output_directory == "":
+			logger.info("Missing output directory")
+
+			dialog = MyDialog(self, QDialogButtonBox.Ok | QDialogButtonBox.Discard)
+			dialog.setMessage("You need to select an output folder for the results to be saved to.\nIf you select to discard the results, the program will run but will not save anything.")
+
+			dialog.onClick = lambda x: x != "Ok" and self.runTracer(None) or None
+
+			dialog.exec()
+
+			return
+		else:
+			self.runTracer(output_directory)
+
+	def runTracer(self, outfolder):
+		logger.info("runTracer called")
+		ips = list(self.ips_df["targets"])
+		#run(ips, outfolder)
 
 	def statsPress(self, chart, stats):
 		chart_path = chart
@@ -458,7 +523,7 @@ class Window(QMainWindow):
 		dockedWindow.show()
 
 		self.mdi.tileSubWindows()
-		
+
 	def readPress(self):
 		readWin = QMdiSubWindow()
 		readWin.setWindowTitle("README")
@@ -472,17 +537,17 @@ class Window(QMainWindow):
 		widget.setAlignment(Qt.AlignTop | Qt.AlignLeft)
 		readWin.setWidget(widget)
 		self.mdi.tileSubWindows()
-	
+
 	def closePress(self):
 		self.mdi.closeAllSubWindows()
-	
+
 	def exitPress(self):
 		QApplication.closeAllWindows()
 		self.close()
 
 	def onRunFinish(self):
 		print("Run finished")
-	
+
 
 
 if __name__ == "__main__":
