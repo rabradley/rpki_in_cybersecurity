@@ -8,6 +8,9 @@ import os
 import shutil
 import zipfile
 
+x = {}
+x.get()
+
 # https://superuser.com/questions/1104504/windows-batch-extract-zip-files-into-folders-based-on-zip-name-and-combining-si
 
 zips = glob.glob("rpki_zips/*.zip")

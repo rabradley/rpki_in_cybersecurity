@@ -1,12 +1,11 @@
 #######################################################
 # Imports #############################################
 #######################################################
-
+from common import logger
 
 import argparse
 import datetime
 import json
-import logging
 import os
 import pandas as pd
 import multiprocessing as mp
@@ -398,10 +397,6 @@ def main(ip_list: list[str], outfolder: str = None, multiprocessing: bool = True
 
 	logger.info(f"Finished tracing IPs, time elapsed: {datetime.timedelta(seconds=trace_end-trace_start)}")
 
-	if outfolder and outfolder.lower() == os.devnull:
-		logger.info("Outfolder is going to null device.")
-		outfolder = None
-
 	if outfolder and not os.path.exists(outfolder):
 		os.makedirs(outfolder, exist_ok=True)
 
@@ -518,27 +513,7 @@ def main(ip_list: list[str], outfolder: str = None, multiprocessing: bool = True
 #######################################################
 # Initialization ######################################
 #######################################################
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
-# Figured out how to do this by looking here: https://docs.python.org/3/library/logging.html#logging.basicConfig
-#logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.DEBUG)
-
-# So I googled "set format for individual loggers python" and it took me to here: https://docs.python.org/3/howto/logging-cookbook.html#using-logging-in-multiple-modules
-
-# To get milliseconds included: https://stackoverflow.com/a/7517430
-formatter = logging.Formatter(fmt='%(asctime)s.%(msecs)03d %(message)s', datefmt='%m/%d/%Y %H:%M:%S')
-
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.DEBUG)
-console_handler.setFormatter(formatter)
-logger.addHandler(console_handler)
-
-# https://stackoverflow.com/questions/13733552/logger-configuration-to-log-to-file-and-print-to-stdout
-file_handler = logging.FileHandler(os.path.splitext(os.path.split(__file__)[1])[0] + ".log", mode='w')
-file_handler.setLevel(logging.DEBUG)
-file_handler.setFormatter(formatter)
-logger.addHandler(file_handler)
 
 parser = HelpParser(
 	prog="tracer.py",
@@ -561,16 +536,16 @@ if __name__ == "__main__":
 		pass
 	elif sys.platform == "darwin":
 		# OS X
-		logging.error(f"Not supported for platform: {sys.platform}")
+		logger.error(f"Not supported for platform: {sys.platform}")
 		exit(1)
 
 	elif sys.platform == "linux" or sys.platform == "linux":
 		# Linux
-		logging.error(f"Not supported for platform: {sys.platform}")
+		logger.error(f"Not supported for platform: {sys.platform}")
 		exit(1)
 
 	else:
-		logging.error(f"Unknown platform: {sys.platform}")
+		logger.error(f"Unknown platform: {sys.platform}")
 		exit(1)
 
 	vargs = vars(args)
@@ -582,6 +557,10 @@ if __name__ == "__main__":
 
 	if args.infile:
 		IPs += get_IPs_from_file(args.infile, args.column)
+
+	if args.outfolder and args.outfolder.lower() == os.devnull:
+		logger.info("Outfolder is going to null device.")
+		args.outfolder = None
 
 	if len(IPs) == 0:
 		logger.error("No IPs specified.")
