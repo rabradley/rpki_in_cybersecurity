@@ -318,32 +318,35 @@ class TableModel(QtCore.QAbstractTableModel):
 				return str(self._data.index[section])
 
 class MyDialog(QDialog):
+
+	# I don't know why this has to be declared here.
+	# Went from https://stackoverflow.com/questions/36434706/pyqt-proper-use-of-emit-and-pyqtsignal
+	# to...
+	# https://stackoverflow.com/questions/17578428/pyqt5-signals-and-slots-qobject-has-no-attribute-error
+	onClick = pyqtSignal(str, name="onClick")
+
 	def __init__(self, parent, buttons):
 		super().__init__(parent)
-		self.layout = QVBoxLayout()
+
 		self.setWindowTitle("Traceroute program")
+		self.layout = QVBoxLayout()
 
 		# https://doc.qt.io/qtforpython-5/PySide2/QtWidgets/QDialogButtonBox.html#PySide2.QtWidgets.PySide2.QtWidgets.QDialogButtonBox.StandardButton
-
 		self.message_label = QLabel("<msg>")
 		self.layout.addWidget(self.message_label)
 
 		self.button_box = QDialogButtonBox(buttons)
 		# self.button_box.accepted.connect(self.close)
-
-		dialogClick: typing.Callable[[QPushButton], None] = lambda btn: self.onClick(btn.text())
-
+		dialogClick: typing.Callable[[QPushButton], None] = lambda btn: self.onClick.emit(btn.text())
 		self.button_box.clicked.connect(dialogClick)
-		self.layout.addWidget(self.button_box)
 
+		self.layout.addWidget(self.button_box)
 		self.setLayout(self.layout)
 
-	def onClick(self, button_text: str):
-		logger.debug(f"Vanilla onClick {button_text}")
-		self.close()
 
 	def setMessage(self, msg: str):
 		self.message_label.setText(msg)
+
 
 
 class Window(QMainWindow):
@@ -443,6 +446,7 @@ class Window(QMainWindow):
 		self.menu_button_container.setLayout(self.button_layout)
 
 		self.ips_df = pd.DataFrame(columns=["targets"])
+		self.ips_df.loc[0, self.ips_df.columns] = ["1.1.1.1"]  # Test IP
 
 		self.model = TableModel(self.ips_df)
 		self.table = QtWidgets.QTableView()
@@ -466,18 +470,21 @@ class Window(QMainWindow):
 	def runPressed(self):
 		if len(self.ips_df.index) == 0:
 			dialog = MyDialog(self, QDialogButtonBox.Ok)
+			dialog.setWindowTitle("Error")
 			dialog.setMessage("You need to have some targets to traceroute.")
+			dialog.onClick.connect(dialog.close)
 			dialog.exec()
 			return
 
 		output_directory = QFileDialog.getExistingDirectory(self, "Select Output Directory")
 		if output_directory == "":
-			logger.info("Missing output directory")
+			logger.info("Output directory was not selected from QFileDialog")
 
 			dialog = MyDialog(self, QDialogButtonBox.Ok | QDialogButtonBox.Discard)
+			dialog.setWindowTitle("Output folder warning")
 			dialog.setMessage("You need to select an output folder for the results to be saved to.\nIf you select to discard the results, the program will run but will not save anything.")
-
-			dialog.onClick = lambda x: x != "Ok" and self.runTracer(None) or None
+			dialog.onClick.connect(dialog.close)
+			dialog.onClick.connect(lambda txt: txt != "OK" and self.runTracer(None))  # I guess OK is uppercase in the dialog.
 
 			dialog.exec()
 
@@ -486,7 +493,7 @@ class Window(QMainWindow):
 			self.runTracer(output_directory)
 
 	def runTracer(self, outfolder):
-		logger.info("runTracer called")
+		logger.info(f"runTracer called with outfolder={outfolder}")
 		ips = list(self.ips_df["targets"])
 		#run(ips, outfolder)
 
