@@ -2,6 +2,7 @@
 # Imports #############################################
 #######################################################
 # Local
+import common
 import tracer
 from common import logger
 
@@ -14,7 +15,9 @@ import pandas as pd
 import multiprocessing as mp
 from multiprocessing.pool import ThreadPool
 import time
+import threading
 import typing
+from urllib.parse import urlparse
 
 import PyQt5
 from PyQt5.QtWidgets import *
@@ -58,9 +61,6 @@ def sanitizeComboBoxValue(text):
 		return None
 	return text
 
-
-def run(ips, outfolder):
-	tracer.main(ips, outfolder)
 
 #######################################################
 # GUI Classes #########################################
@@ -198,6 +198,7 @@ class InputWindow(QMainWindow):
 		self.manual_button = QPushButton("Manual", self)
 		self.manual_button.setFont(QFont('Arial:Bold', 20))
 		self.manual_button.setStyleSheet("background-color: rgb(188,36,36); color: white")
+		self.manual_button.clicked.connect(self.promptforManualEntry)
 		self.button_layout.addWidget(self.manual_button)
 
 
@@ -257,6 +258,53 @@ class InputWindow(QMainWindow):
 
 	def onCancelClicked(self):
 		self.close()
+
+	def onManualEntry(self, clicked: str):
+		if clicked == "OK":
+			self.dialog.close()
+			text: str = self.dialog.line_edit.text()
+			text = text.strip()
+
+			data = urlparse(text)
+			target = data.netloc == "" and data.path or data.netloc
+
+			if common.check_ip(target):
+				logger.debug("Manually entered IP address")
+			elif 0 < target.find(".") < len(target) - 1:  # netloc.find(".") > 0 and netloc.find(".") < len(netloc) - 1
+				logger.debug("Manually entered domain")
+			else:
+				# Invalid!
+
+				error = MyDialog(self, QDialogButtonBox.Ok)
+				error.setMessage(f"Target \"{text}\" is invalid.")
+				error.onClick.connect(error.close)
+				error.onClick.connect(self.promptforManualEntry)
+				error.exec()
+
+				return
+
+			self.root.addTargetsToProcess([target])
+			self.promptforManualEntry()
+		else:
+			self.dialog.close()
+
+	def promptforManualEntry(self):
+		self.dialog = MyDialog(self, QDialogButtonBox.Ok | QDialogButtonBox.Close)
+		self.dialog.setWindowTitle("Manual Input")
+		self.dialog.setMessage("Please enter a target.")
+
+		self.dialog.line_edit = QLineEdit(self.dialog)
+		self.dialog.line_edit.setPlaceholderText("Ex: 0.0.0.0 OR example.com")
+		# Reposition elements to put line_edit in middle
+		self.dialog.layout.addWidget(self.dialog.message_label)
+		self.dialog.layout.addWidget(self.dialog.line_edit)
+		self.dialog.layout.addWidget(self.dialog.button_box)
+
+		self.dialog.onClick.connect(self.onManualEntry)
+		self.dialog.show()  # setFocus will only work after the widget has been displayed.
+		self.dialog.line_edit.setFocus()
+		self.dialog.exec()
+
 
 	def promptForFile(self):
 		# https://doc.qt.io/qtforpython-5/PySide2/QtWidgets/QFileDialog.html#detailed-description
@@ -350,6 +398,8 @@ class MyDialog(QDialog):
 
 
 class Window(QMainWindow):
+	tracer_complete = pyqtSignal(str, name="tracer_complete")
+
 	def __init__(self):
 		global CURRENT_RESOLUTION
 		super().__init__()
@@ -446,7 +496,8 @@ class Window(QMainWindow):
 		self.menu_button_container.setLayout(self.button_layout)
 
 		self.ips_df = pd.DataFrame(columns=["targets"])
-		self.ips_df.loc[0, self.ips_df.columns] = ["1.1.1.1"]  # Test IP
+		self.ips_df.loc[len(self.ips_df), self.ips_df.columns] = ["1.1.1.1"]
+		self.ips_df.loc[len(self.ips_df), self.ips_df.columns] = ["10.0.0.10"]  # Test IP
 
 		self.model = TableModel(self.ips_df)
 		self.table = QtWidgets.QTableView()
@@ -457,7 +508,12 @@ class Window(QMainWindow):
 
 	def addTargetsToProcess(self, targets: list[str]):
 		# Well... this is all pretty ugly.
-		self.ips_df["targets"] = list(set(list(self.ips_df["targets"]) + targets))
+		# Also wow, do I just **hate** all the options for adding rows to a dataframe.
+
+		# https://stackoverflow.com/questions/21317384/how-to-concatenate-two-dataframes-without-duplicates
+		updated_data = pd.concat([self.ips_df["targets"], pd.Series(targets)], ignore_index=True)
+		updated_data = updated_data.drop_duplicates()
+		self.ips_df = pd.DataFrame(data=updated_data, columns=["targets"])
 		self.model.removeRows(0, self.model.rowCount(0))
 		# Doing these two steps seems like the fastest way of rebuilding the table but not sure if there are any side effects.
 		self.model.__init__(self.ips_df)
@@ -492,10 +548,26 @@ class Window(QMainWindow):
 		else:
 			self.runTracer(output_directory)
 
+	def monitorTracerProcess(self, process: mp.Process, outfolder: str):
+		print("testing")
+		print("END:", process.join())
+		self.tracer_complete.emit(outfolder)
+
 	def runTracer(self, outfolder):
 		logger.info(f"runTracer called with outfolder={outfolder}")
 		ips = list(self.ips_df["targets"])
-		#run(ips, outfolder)
+
+		self.add_input_button.setDisabled(True)
+		self.run_button.setDisabled(True)
+		self.close_windows_button.setDisabled(True)
+		self.exit_button.setDisabled(True)
+		self.mdi.closeAllSubWindows()
+
+		self.tracer_process = mp.Process(target=tracer.main, args=(ips, outfolder))
+		self.tracer_process.start()
+
+		self.tracer_thread = threading.Thread(target=self.monitorTracerProcess, args=(self.tracer_process, outfolder))
+		self.tracer_thread.start()
 
 	def statsPress(self, chart, stats):
 		chart_path = chart
@@ -551,10 +623,6 @@ class Window(QMainWindow):
 	def exitPress(self):
 		QApplication.closeAllWindows()
 		self.close()
-
-	def onRunFinish(self):
-		print("Run finished")
-
 
 
 if __name__ == "__main__":
