@@ -63,6 +63,15 @@ def sanitizeComboBoxValue(text):
 		return None
 	return text
 
+def setButtonsDisabled(self, disabled, exit=False):
+	self.add_input_button.setDisabled(disabled)
+	# self.delete_inputs_button.setDisabled(disabled)
+	self.run_button.setDisabled(disabled)
+	#self.close_windows_button.setDisabled(disabled)
+	
+	if exit:
+		self.exit_button.setDisabled(disabled)
+
 
 #######################################################
 # GUI Classes #########################################
@@ -217,48 +226,6 @@ class InputWindow(QMainWindow):
 		button_container.setLayout(self.button_layout)
 		button_container.setStyleSheet(" color: black; background: rgba(76, 175, 80, 0);")
 		button_container.setGeometry(geo(0, HEIGHT - 90, WIDTH, 90))
-
-
-		#self.state_box = QComboBox(self)
-		#self.state_box.setFont(QFont("Arial", 12))
-		#self.state_box.setGeometry(addQRects(self.state_label.geometry(), geo(0, LABEL_HEIGHT + MARGIN, 0, 0)))
-		#self.state_box.setDisabled(True)
-
-		"""
-		# City section
-		self.city_label = QLabel("City", self)
-		self.city_label.setAlignment(Qt.AlignCenter)
-		self.city_label.setStyleSheet(" color: black; background-color: #444488;")
-		self.city_label.setFont(QFont('Arial:Bold', 20))
-		self.city_label.setGeometry(geo(LABEL_WIDTH*2 + MARGIN*3 / 1.3, HEIGHT / 4, LABEL_WIDTH, LABEL_HEIGHT))
-
-		self.city_box = QComboBox(self)
-		self.city_box.setFont(QFont("Arial", 12))
-		self.city_box.setGeometry(addQRects(self.city_label.geometry(), geo(0, LABEL_HEIGHT + MARGIN, 0, 0)))
-		self.city_box.setDisabled(True)
-
-		# Buttons
-		self.cancel_button = QPushButton("Cancel", self)
-		#self.cancel_button.setGeometry(addQRects(self.cc_label.geometry(), geo(MARGIN, HEIGHT/2, -MARGIN*2, MARGIN*2)))
-		self.cancel_button.setFont(QFont('Arial:Bold', 20))
-		self.cancel_button.setStyleSheet("background-color: rgb(188,36,36); color: white")
-
-		self.clear_button = QPushButton("Clear Inputs", self)
-		#self.clear_button.setGeometry(addQRects(self.state_label.geometry(), geo(MARGIN, HEIGHT / 2, -MARGIN*2, MARGIN * 2)))
-		self.clear_button.setFont(QFont('Arial:Bold', 20))
-		self.clear_button.setStyleSheet("background-color: rgb(188,36,36); color: white")
-
-		self.run_button = QPushButton("Run", self)
-		#self.run_button.setGeometry(addQRects(self.city_label.geometry(), geo(MARGIN, HEIGHT / 2, -MARGIN*2, MARGIN * 2)))
-		self.run_button.setFont(QFont('Arial:Bold', 20))
-		self.run_button.setStyleSheet("background-color: rgb(188,36,36); color: white")
-
-		# Do setup stuff
-
-		self.cancel_button.clicked.connect(self.onCancelClicked)
-		#self.clear_button.clicked.connect(self.onClearClicked)
-		self.run_button.clicked.connect(self.onRunClicked)
-		"""
 
 	def onCancelClicked(self):
 		self.close()
@@ -478,17 +445,28 @@ class Window(QMainWindow):
 
 		self.menu_button_container = QWidget(self)
 		
-		self.button_layout = QVBoxLayout()
+		self.menu_button_layout = QVBoxLayout()
 
 		self.add_input_button = QPushButton("Add Inputs")
 		self.add_input_button.setMinimumSize(BUTTON_SIZE)
 		# self.add_input_button.setIcon(QtGui.QIcon("assets/readme.png"))
 		self.add_input_button.setStyleSheet("background-color:rgb(188,36,36); color: white")
-		self.add_input_button
+
 		self.add_input_button.setFont(QFont('Arial:Bold', 24))
 		self.add_input_button.setIconSize(sQSize(500, 500))
 		self.add_input_button.clicked.connect(self.addInputPressed)
-		self.button_layout.addWidget(self.add_input_button)
+		self.menu_button_layout.addWidget(self.add_input_button)
+
+		"""
+		self.delete_inputs_button = QPushButton("Delete Selected Cells")
+		self.delete_inputs_button.setMinimumSize(BUTTON_SIZE)
+		# self.add_input_button.setIcon(QtGui.QIcon("assets/readme.png"))
+		self.delete_inputs_button.setStyleSheet("background-color:rgb(188,36,36); color: white")
+		self.delete_inputs_button.setFont(QFont('Arial:Bold', 24))
+		self.delete_inputs_button.setIconSize(sQSize(500, 500))
+		self.delete_inputs_button.clicked.connect(self.deleteInputsPressed)
+		self.menu_button_layout.addWidget(self.delete_inputs_button)
+		"""
 
 		self.run_button = QPushButton("Run", self)
 		self.run_button.setMinimumSize(BUTTON_SIZE)
@@ -497,27 +475,31 @@ class Window(QMainWindow):
 		self.run_button.setFont(QFont('Arial:Bold', 24))
 		self.run_button.setIconSize(sQSize(500, 500))
 		self.run_button.clicked.connect(self.runPressed)
-		self.button_layout.addWidget(self.run_button)
+		self.menu_button_layout.addWidget(self.run_button)
 
+		"""
 		self.close_windows_button = QPushButton("Close All Windows", self)
 		self.close_windows_button.setMinimumSize(BUTTON_SIZE)
 		self.close_windows_button.setStyleSheet("background-color: rgb(188,36,36); color: white")
 		self.close_windows_button.setFont(QFont('Arial:Bold', 24))
 		self.close_windows_button.clicked.connect(self.closePress)
-		self.button_layout.addWidget(self.close_windows_button)
+		self.menu_button_layout.addWidget(self.close_windows_button)
+		self.menu_buttons.append(self.close_windows_button)
+		"""
+
 
 		self.exit_button = QPushButton("Exit", self)
 		self.exit_button.setMinimumSize(BUTTON_SIZE)
 		self.exit_button.setStyleSheet("background-color: rgb(188,36,36); color: white")
 		self.exit_button.setFont(QFont('Arial:Bold', 24))
 		self.exit_button.clicked.connect(self.exitPress)
-		self.button_layout.addWidget(self.exit_button)
+		self.menu_button_layout.addWidget(self.exit_button)
 
 
 		# I don't know if changing to this layout was worth the frustration here compared to the position math I had before.
 		self.menu_button_container.setStyleSheet("background-color: #cccccc;")
 		self.menu_button_container.setGeometry(geo(195, 500, 400, (75 + 20) * 4))  # Using the raw 400 and 75 to avoid double scaling
-		self.menu_button_container.setLayout(self.button_layout)
+		self.menu_button_container.setLayout(self.menu_button_layout)
 
 		self.ips_df = pd.DataFrame(columns=["targets"])
 		# self.ips_df.loc[len(self.ips_df), self.ips_df.columns] = ["1.1.1.1"]
@@ -548,6 +530,9 @@ class Window(QMainWindow):
 	def addInputPressed(self):
 		self.input_window = InputWindow(self)
 		self.input_window.show()
+
+	def deleteInputsPressed(self):
+		pass
 
 	def runPressed(self):
 		if len(self.ips_df.index) == 0:
@@ -583,11 +568,13 @@ class Window(QMainWindow):
 			time.sleep(.5)
 			traces_done = progress_data[0]["traceroutes_complete"]
 
+			dots = "." * tick
+			tick = (tick + 1) % 4
+
 			if traces_done != num_targets:
-				self.progress_window.header_label.setText(f"Traceroutes done: {traces_done} / {num_targets}")
+				self.progress_window.header_label.setText(f"Traceroutes done: {traces_done} / {num_targets}\nPlease wait{dots}")
 			else:
-				self.progress_window.header_label.setText("Processing" + ("." * tick))
-				tick = (tick + 1) % 4
+				self.progress_window.header_label.setText("Processing" + dots)
 
 		logger.info(f"Process finished: {process.join()}")
 
@@ -595,13 +582,10 @@ class Window(QMainWindow):
 
 	def onTracerDone(self, outfolder: str):
 		logger.info(f"onTracerDone: {outfolder}")
-		self.add_input_button.setDisabled(False)
-		self.run_button.setDisabled(False)
-		self.close_windows_button.setDisabled(False)
-		self.exit_button.setDisabled(False)
+		setButtonsDisabled(self, False)
 
 		if not outfolder:
-			self.progress_window.header_label.setText("No output directory was selected.")
+			self.progress_window.header_label.setText("Finished, but no output directory was selected.")
 			return
 
 		self.mdi.closeAllSubWindows()
@@ -625,13 +609,8 @@ class Window(QMainWindow):
 		logger.info(f"runTracer called with outfolder={outfolder}")
 		ips = list(self.ips_df["targets"])
 
-		self.add_input_button.setDisabled(True)
-		self.run_button.setDisabled(True)
-		self.close_windows_button.setDisabled(True)
-		self.exit_button.setDisabled(True)
+		setButtonsDisabled(self, True)
 		self.mdi.closeAllSubWindows()
-
-		print(__name__)
 
 		self.progress_window = ProgressWindow(self.mdi)
 		self.mdi.addSubWindow(self.progress_window)
