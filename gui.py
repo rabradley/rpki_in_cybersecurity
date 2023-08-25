@@ -35,6 +35,8 @@ from PyQt5.QtCore import QProcess
 DEFAULT_RESOLUTION = (1920, 1080)
 CURRENT_RESOLUTION = None
 
+progress_data = None
+
 #######################################################
 # Functions #############################################
 #######################################################
@@ -198,6 +200,7 @@ class InputWindow(QMainWindow):
 		self.manual_button = QPushButton("Manual", self)
 		self.manual_button.setFont(QFont('Arial:Bold', 20))
 		self.manual_button.setStyleSheet("background-color: rgb(188,36,36); color: white")
+		self.manual_button.clicked.connect(self.close)
 		self.manual_button.clicked.connect(self.promptforManualEntry)
 		self.button_layout.addWidget(self.manual_button)
 
@@ -206,6 +209,7 @@ class InputWindow(QMainWindow):
 		self.file_button = QPushButton("Select File", self)
 		self.file_button.setFont(QFont('Arial:Bold', 20))
 		self.file_button.setStyleSheet("background-color: rgb(188,36,36); color: white")
+		self.file_button.clicked.connect(self.close)
 		self.file_button.clicked.connect(self.promptForFile)
 		self.button_layout.addWidget(self.file_button)
 
@@ -381,6 +385,7 @@ class MyDialog(QDialog):
 
 		# https://doc.qt.io/qtforpython-5/PySide2/QtWidgets/QDialogButtonBox.html#PySide2.QtWidgets.PySide2.QtWidgets.QDialogButtonBox.StandardButton
 		self.message_label = QLabel("<msg>")
+		self.message_label.setFont(QFont('Arial', 12))
 		self.layout.addWidget(self.message_label)
 
 		self.button_box = QDialogButtonBox(buttons)
@@ -396,6 +401,21 @@ class MyDialog(QDialog):
 		self.message_label.setText(msg)
 
 
+class ProgressWindow(QMainWindow):
+	def __init__(self, root):
+		super().__init__()
+		self.root = root
+
+		self.setWindowTitle("Progress")
+		(WIDTH, HEIGHT) = 900, 400
+		# self.resize(sQSize(WIDTH, HEIGHT))
+
+		self.header_label = QLabel("", self)
+		self.header_label.setStyleSheet(" color: black")
+		self.header_label.setAlignment(Qt.AlignCenter)
+		self.header_label.setFont(QFont('Arial:Bold', 25))
+		self.header_label.setGeometry(geo(0, 0, WIDTH, HEIGHT / 4))
+
 
 class Window(QMainWindow):
 	tracer_complete = pyqtSignal(str, name="tracer_complete")
@@ -407,6 +427,9 @@ class Window(QMainWindow):
 		# Screen stuff
 		screen = App.primaryScreen()
 		self.screen_size = (screen.size().width(), screen.size().height())
+		# PyCharm will launch the UI on whatever screen the IDE exists, despite it using the primary screen details.
+		# This .move line moves it to the primary screen. https://stackoverflow.com/a/6855128
+		self.move(screen.geometry().left(), screen.geometry().top())
 		CURRENT_RESOLUTION = self.screen_size
 
 		# Main Window
@@ -459,8 +482,9 @@ class Window(QMainWindow):
 
 		self.add_input_button = QPushButton("Add Inputs")
 		self.add_input_button.setMinimumSize(BUTTON_SIZE)
-		#self.add_input_button.setIcon(QtGui.QIcon("assets/readme.png"))
-		#self.add_input_button.setStyleSheet("background-color:rgb(188,36,36); color: white")
+		# self.add_input_button.setIcon(QtGui.QIcon("assets/readme.png"))
+		self.add_input_button.setStyleSheet("background-color:rgb(188,36,36); color: white")
+		self.add_input_button
 		self.add_input_button.setFont(QFont('Arial:Bold', 24))
 		self.add_input_button.setIconSize(sQSize(500, 500))
 		self.add_input_button.clicked.connect(self.addInputPressed)
@@ -469,7 +493,7 @@ class Window(QMainWindow):
 		self.run_button = QPushButton("Run", self)
 		self.run_button.setMinimumSize(BUTTON_SIZE)
 		# self.run_button.setIcon(QtGui.QIcon("assets/readme.png"))
-		# self.run_button.setStyleSheet("background-color:rgb(188,36,36); color: white")
+		self.run_button.setStyleSheet("background-color:rgb(188,36,36); color: white")
 		self.run_button.setFont(QFont('Arial:Bold', 24))
 		self.run_button.setIconSize(sQSize(500, 500))
 		self.run_button.clicked.connect(self.runPressed)
@@ -496,7 +520,7 @@ class Window(QMainWindow):
 		self.menu_button_container.setLayout(self.button_layout)
 
 		self.ips_df = pd.DataFrame(columns=["targets"])
-		self.ips_df.loc[len(self.ips_df), self.ips_df.columns] = ["1.1.1.1"]
+		# self.ips_df.loc[len(self.ips_df), self.ips_df.columns] = ["1.1.1.1"]
 		self.ips_df.loc[len(self.ips_df), self.ips_df.columns] = ["10.0.0.10"]  # Test IP
 
 		self.model = TableModel(self.ips_df)
@@ -505,6 +529,8 @@ class Window(QMainWindow):
 		self.table.show()
 		self.mdi.addSubWindow(self.table)
 		self.mdi.tileSubWindows()
+
+		self.tracer_complete.connect(self.onTracerDone)
 
 	def addTargetsToProcess(self, targets: list[str]):
 		# Well... this is all pretty ugly.
@@ -549,9 +575,51 @@ class Window(QMainWindow):
 			self.runTracer(output_directory)
 
 	def monitorTracerProcess(self, process: mp.Process, outfolder: str):
-		print("testing")
-		print("END:", process.join())
+		traces_done = 0
+		num_targets = len(self.ips_df)
+
+		tick = 0
+		while process.is_alive():
+			time.sleep(.5)
+			traces_done = progress_data[0]["traceroutes_complete"]
+
+			if traces_done != num_targets:
+				self.progress_window.header_label.setText(f"Traceroutes done: {traces_done} / {num_targets}")
+			else:
+				self.progress_window.header_label.setText("Processing" + ("." * tick))
+				tick = (tick + 1) % 4
+
+		logger.info(f"Process finished: {process.join()}")
+
 		self.tracer_complete.emit(outfolder)
+
+	def onTracerDone(self, outfolder: str):
+		logger.info(f"onTracerDone: {outfolder}")
+		self.add_input_button.setDisabled(False)
+		self.run_button.setDisabled(False)
+		self.close_windows_button.setDisabled(False)
+		self.exit_button.setDisabled(False)
+
+		if not outfolder:
+			self.progress_window.header_label.setText("No output directory was selected.")
+			return
+
+		self.mdi.closeAllSubWindows()
+		del self.progress_window
+
+		rpki_summary_path = os.path.join(outfolder, "rpki_summary.csv")
+
+		del self.model
+		del self.table
+
+
+		self.summary_df = pd.read_csv(rpki_summary_path)
+		self.model = TableModel(self.summary_df)
+		self.table = QtWidgets.QTableView()
+		self.table.setModel(self.model)
+		self.mdi.addSubWindow(self.table)
+		self.table.show()
+		self.mdi.tileSubWindows()
 
 	def runTracer(self, outfolder):
 		logger.info(f"runTracer called with outfolder={outfolder}")
@@ -563,7 +631,14 @@ class Window(QMainWindow):
 		self.exit_button.setDisabled(True)
 		self.mdi.closeAllSubWindows()
 
-		self.tracer_process = mp.Process(target=tracer.main, args=(ips, outfolder))
+		print(__name__)
+
+		self.progress_window = ProgressWindow(self.mdi)
+		self.mdi.addSubWindow(self.progress_window)
+		self.progress_window.show()
+		self.mdi.tileSubWindows()
+
+		self.tracer_process = mp.Process(target=tracer.main, args=(ips, outfolder), kwargs={"progress_data": progress_data})
 		self.tracer_process.start()
 
 		self.tracer_thread = threading.Thread(target=self.monitorTracerProcess, args=(self.tracer_process, outfolder))
@@ -626,6 +701,10 @@ class Window(QMainWindow):
 
 
 if __name__ == "__main__":
+	manager = mp.Manager()
+	progress_data = manager.list()
+	progress_data.append({"traceroutes_complete": 0})
+
 	App = QApplication(sys.argv)
 
 	window = Window()

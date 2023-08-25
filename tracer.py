@@ -334,8 +334,12 @@ def traceroute(addresses: list[str] | str) -> list[TracerouteResult]:
 
 	return results
 
-def mp_traceroute(addresses: list[str] | str) -> list[TracerouteResult]:
+def mp_traceroute(addresses: list[str] | str, max_processes: int = None, progress_data = None) -> list[TracerouteResult]:
 	process_count = min(len(addresses), mp.cpu_count())
+	if max_processes:
+		process_count = min(process_count, max_processes)
+
+	logger.info(f"mp_traceroute running at process_count={process_count} (max_processes={max_processes}) ")
 
 	def sigint_handler(signal, frame):
 		logger.error("Received interrupt signal, exiting. " + "=" * 50)
@@ -357,11 +361,20 @@ def mp_traceroute(addresses: list[str] | str) -> list[TracerouteResult]:
 		results = [pool.apply_async(traceroute, args=(addr,), error_callback=error_callback) for addr in addresses]
 		last_ready = 0
 		while True:
-			time.sleep(0.5)
+			time.sleep(1)
 			try:
 				# These need to be done here to get the exception.
 				ready = [r.ready() for r in results]
 				last_ready = ready.count(True)
+				if progress_data:
+					# See https://docs.python.org/3/library/multiprocessing.html#proxy-objects
+					# on how to update the shared data.
+					# TLDR: It seems that modifications aren't detected until you force
+					# notification of a change.
+					d = progress_data[0]
+					d["traceroutes_complete"] = last_ready
+					progress_data[0] = d
+
 				successful = [r.successful() for r in results]
 			except Exception as err:
 				if pool._state == "TERMINATE":
@@ -385,11 +398,15 @@ def mp_traceroute(addresses: list[str] | str) -> list[TracerouteResult]:
 		exit(1)
 
 
-def main(ip_list: list[str], outfolder: str = None, multiprocessing: bool = True) -> list[list]:
+def main(ip_list: list[str], outfolder: str = None, multiprocessing: bool | int = True, progress_data = None) -> list[list]:
 	trace_start = time.time()
 	if multiprocessing:
+		if type(multiprocessing) == bool:
+			# Set to nothing so it doesn't affect max processes. In other words, assume no maximum.
+			multiprocessing = None
+
 		logger.info("Using multiprocessing for traceroutes.")
-		traces = mp_traceroute(ip_list)
+		traces = mp_traceroute(ip_list, max_processes=multiprocessing, progress_data=progress_data)
 	else:
 		logger.info("Multiprocessing disabled, using single process.")
 		traces = traceroute(ip_list)
